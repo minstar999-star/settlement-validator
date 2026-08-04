@@ -12,10 +12,27 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const SITE_URL = "https://my-app-iota-three-39.vercel.app";
+const SITE_DESCRIPTION =
+  "국회 결산 질의서와 D-Brain OLAP 자료를 대조해 수치를 검증하는 도구";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "Validator",
-  description:
-    "국회 결산 질의서와 D-Brain OLAP 자료를 대조해 수치를 검증하는 도구",
+  description: SITE_DESCRIPTION,
+  openGraph: {
+    title: "Validator",
+    description: SITE_DESCRIPTION,
+    url: SITE_URL,
+    siteName: "Validator",
+    locale: "ko_KR",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Validator",
+    description: SITE_DESCRIPTION,
+  },
 };
 
 export default function RootLayout({
