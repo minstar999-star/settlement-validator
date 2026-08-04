@@ -10,6 +10,50 @@ function describeError(error: unknown): string {
 }
 
 /**
+ * pdfjs-dist(6.x)는 최근 나온 JS 기능(Promise.withResolvers 등)을 쓰는데,
+ * 구형 iOS WebKit 기반 브라우저(카카오톡 인앱 브라우저 등)에는 아직 없을 수 있다.
+ * 없을 때만 채워 넣는다 — 이미 있으면 아무 영향이 없다.
+ */
+function ensurePdfPolyfills(): void {
+  const PromiseCtor = Promise as unknown as {
+    withResolvers?: () => {
+      promise: Promise<unknown>;
+      resolve: (v?: unknown) => void;
+      reject: (e?: unknown) => void;
+    };
+  };
+  if (typeof PromiseCtor.withResolvers !== "function") {
+    PromiseCtor.withResolvers = function withResolvers() {
+      let resolve!: (v?: unknown) => void;
+      let reject!: (e?: unknown) => void;
+      const promise = new Promise((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    };
+  }
+
+  const ArrayProto = Array.prototype as unknown as {
+    at?: (n: number) => unknown;
+  };
+  if (typeof ArrayProto.at !== "function") {
+    ArrayProto.at = function at(this: unknown[], n: number) {
+      const i = Math.trunc(n) || 0;
+      const index = i < 0 ? this.length + i : i;
+      return index >= 0 && index < this.length ? this[index] : undefined;
+    };
+  }
+
+  const globalWithClone = globalThis as unknown as {
+    structuredClone?: <T>(v: T) => T;
+  };
+  if (typeof globalWithClone.structuredClone !== "function") {
+    globalWithClone.structuredClone = (v) => JSON.parse(JSON.stringify(v));
+  }
+}
+
+/**
  * 질의서 PDF에서 글자를 뽑는다. (PRD 개발 단위 4)
  * pdfjs는 브라우저 전용 API를 쓰기 때문에, 서버 렌더링 중에 불러오지 않도록
  * 함수가 실제로 호출될 때 동적으로 import 한다.
@@ -20,6 +64,8 @@ function describeError(error: unknown): string {
 export async function extractPdfText(
   file: File
 ): Promise<{ text: string; pageCount: number }> {
+  ensurePdfPolyfills();
+
   let pdfjsLib;
   try {
     pdfjsLib = await import("pdfjs-dist");
