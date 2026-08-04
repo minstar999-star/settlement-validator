@@ -12,10 +12,9 @@ export async function extractPdfText(
   file: File
 ): Promise<{ text: string; pageCount: number }> {
   const pdfjsLib = await import("pdfjs-dist");
-  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/build/pdf.worker.min.mjs",
-    import.meta.url
-  ).toString();
+  // 번들러가 워커 경로를 잘못 풀어내는 브라우저(카카오톡 인앱 브라우저 등)가 있어,
+  // public/에 워커 파일을 직접 두고 고정 경로로 가리킨다.
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
   let pdf;
   try {
