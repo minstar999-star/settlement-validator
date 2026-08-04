@@ -16,6 +16,7 @@ const eslintConfig = defineConfig([
     "scripts/**",
     // pdfjs-dist에서 그대로 복사해온 서드파티 워커 파일 (직접 작성한 코드 아님)
     "public/pdf.worker.min.mjs",
+    "public/pdf.worker.legacy.min.mjs",
   ]),
 ]);
 

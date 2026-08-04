@@ -68,10 +68,12 @@ export async function extractPdfText(
 
   let pdfjsLib;
   try {
-    pdfjsLib = await import("pdfjs-dist");
-    // 번들러가 워커 경로를 잘못 풀어내는 브라우저(카카오톡 인앱 브라우저 등)가 있어,
-    // public/에 워커 파일을 직접 두고 고정 경로로 가리킨다.
-    pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+    // main 빌드는 최신 JS 문법(Promise.withResolvers 등)을 써서 구형 iOS
+    // Safari/WebKit(카카오톡 인앱 브라우저 포함)에서 "undefined is not a
+    // function"으로 깨진다. legacy 빌드+그에 맞는 워커를 함께 쓴다
+    // (라이브러리와 워커는 반드시 같은 빌드끼리 맞춰야 한다).
+    pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.legacy.min.mjs";
   } catch (error) {
     throw new PdfParseError(
       `PDF 처리 도구를 불러오지 못했습니다. 다른 브라우저(크롬·사파리)로 다시 시도해 주세요. (${describeError(error)})`
