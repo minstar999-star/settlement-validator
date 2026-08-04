@@ -12,6 +12,26 @@ function describeError(error: unknown): string {
 }
 
 /**
+ * pdfjs-dist는 모듈을 불러오는 시점에 DOMMatrix 등 브라우저 전용 캔버스 API를
+ * 참조한다(실제 렌더링은 안 해도). 로컬 Node.js에서는 문제없이 넘어갔지만
+ * Vercel 서버리스 환경에서는 "ReferenceError: DOMMatrix is not defined"로 실패했다.
+ * 텍스트 추출(getTextContent)만 쓸 것이므로 진짜 캔버스 구현은 필요 없고,
+ * import가 참조 에러 없이 끝나도록 최소한의 빈 스텁만 전역에 등록해 둔다.
+ */
+function ensureNodeCanvasStubs(): void {
+  const g = globalThis as Record<string, unknown>;
+  if (typeof g.DOMMatrix === "undefined") {
+    g.DOMMatrix = class DOMMatrix {};
+  }
+  if (typeof g.Path2D === "undefined") {
+    g.Path2D = class Path2D {};
+  }
+  if (typeof g.ImageData === "undefined") {
+    g.ImageData = class ImageData {};
+  }
+}
+
+/**
  * 질의서 PDF에서 글자를 뽑는다. (PRD 개발 단위 4)
  *
  * 원래는 브라우저(클라이언트)에서 pdfjs-dist로 처리했으나, iOS Safari/WebKit
@@ -32,6 +52,7 @@ export async function POST(req: NextRequest) {
 
   let pdfjsLib;
   try {
+    ensureNodeCanvasStubs();
     pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
   } catch (error) {
     console.error("pdfjs-dist 로딩 오류:", error);
