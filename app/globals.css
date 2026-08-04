@@ -3,24 +3,27 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* 재정경제부 로고에서 추출한 색 (PRD 5번 디자인 규칙) */
+  --brand-blue: #003668;
+  --brand-blue-light: #eaf1f7;
+  --brand-red: #e6002d;
+  --brand-gray: #595757;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-brand-blue: var(--brand-blue);
+  --color-brand-blue-light: var(--brand-blue-light);
+  --color-brand-red: var(--brand-red);
+  --color-brand-gray: var(--brand-gray);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Malgun Gothic", "Apple SD Gothic Neo", Arial, Helvetica,
+    sans-serif;
 }
