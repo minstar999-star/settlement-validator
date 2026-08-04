@@ -53,6 +53,13 @@ export async function POST(req: NextRequest) {
   let pdfjsLib;
   try {
     ensureNodeCanvasStubs();
+    // pdfjs-dist는 워커가 없으면 자기 자신을 워커로 재사용하려고 워커 스크립트를
+    // 실행 시점 문자열 경로로 동적 import(`import(this.workerSrc)`)한다. 이 경로는
+    // 정적 분석이 안 돼서 Vercel 배포 시 파일 추적에서 빠져 "모듈을 찾을 수 없음"
+    // 오류가 났다. 워커 모듈을 여기서 정적으로 미리 import해 globalThis.pdfjsWorker에
+    // 올려두면, pdfjs-dist가 이미 올라온 워커를 그대로 재사용해 그 동적 import를 건너뛴다.
+    const pdfjsWorker = await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
+    (globalThis as Record<string, unknown>).pdfjsWorker = pdfjsWorker;
     pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
   } catch (error) {
     console.error("pdfjs-dist 로딩 오류:", error);
