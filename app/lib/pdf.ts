@@ -1,5 +1,3 @@
-import { MIN_PDF_TEXT_CHARS } from "./limits";
-
 /** 화면에 그대로 보여줄 안내 문구를 담은 오류 */
 export class PdfParseError extends Error {}
 
@@ -10,109 +8,38 @@ function describeError(error: unknown): string {
 }
 
 /**
- * pdfjs-dist(6.x)는 최근 나온 JS 기능(Promise.withResolvers 등)을 쓰는데,
- * 구형 iOS WebKit 기반 브라우저(카카오톡 인앱 브라우저 등)에는 아직 없을 수 있다.
- * 없을 때만 채워 넣는다 — 이미 있으면 아무 영향이 없다.
- */
-function ensurePdfPolyfills(): void {
-  const PromiseCtor = Promise as unknown as {
-    withResolvers?: () => {
-      promise: Promise<unknown>;
-      resolve: (v?: unknown) => void;
-      reject: (e?: unknown) => void;
-    };
-  };
-  if (typeof PromiseCtor.withResolvers !== "function") {
-    PromiseCtor.withResolvers = function withResolvers() {
-      let resolve!: (v?: unknown) => void;
-      let reject!: (e?: unknown) => void;
-      const promise = new Promise((res, rej) => {
-        resolve = res;
-        reject = rej;
-      });
-      return { promise, resolve, reject };
-    };
-  }
-
-  const ArrayProto = Array.prototype as unknown as {
-    at?: (n: number) => unknown;
-  };
-  if (typeof ArrayProto.at !== "function") {
-    ArrayProto.at = function at(this: unknown[], n: number) {
-      const i = Math.trunc(n) || 0;
-      const index = i < 0 ? this.length + i : i;
-      return index >= 0 && index < this.length ? this[index] : undefined;
-    };
-  }
-
-  const globalWithClone = globalThis as unknown as {
-    structuredClone?: <T>(v: T) => T;
-  };
-  if (typeof globalWithClone.structuredClone !== "function") {
-    globalWithClone.structuredClone = (v) => JSON.parse(JSON.stringify(v));
-  }
-}
-
-/**
  * 질의서 PDF에서 글자를 뽑는다. (PRD 개발 단위 4)
- * pdfjs는 브라우저 전용 API를 쓰기 때문에, 서버 렌더링 중에 불러오지 않도록
- * 함수가 실제로 호출될 때 동적으로 import 한다.
  *
- * 단계별로 구분해서 감싼 이유: 이전에는 모듈 로딩·페이지 텍스트 추출 단계의
- * 오류가 안 잡혀서 "알 수 없는 오류"로만 뜨고 원인을 알 수 없었다.
+ * iOS Safari/WebKit 엔진에서 브라우저 내 PDF 파싱(pdfjs-dist)이 브라우저
+ * 종류·빌드와 무관하게 계속 실패해(TypeError: undefined is not a function),
+ * 실제 파싱은 서버(`/api/extract-pdf`, Node.js 런타임)에서 하도록 옮겼다.
+ * 업로드한 파일은 그 요청 처리 중에만 서버 메모리에 있고, 저장하지 않는다.
  */
 export async function extractPdfText(
   file: File
 ): Promise<{ text: string; pageCount: number }> {
-  ensurePdfPolyfills();
+  const formData = new FormData();
+  formData.append("file", file);
 
-  let pdfjsLib;
+  let res: Response;
   try {
-    // main 빌드는 최신 JS 문법(Promise.withResolvers 등)을 써서 구형 iOS
-    // Safari/WebKit(카카오톡 인앱 브라우저 포함)에서 "undefined is not a
-    // function"으로 깨진다. legacy 빌드+그에 맞는 워커를 함께 쓴다
-    // (라이브러리와 워커는 반드시 같은 빌드끼리 맞춰야 한다).
-    pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.legacy.min.mjs";
+    res = await fetch("/api/extract-pdf", { method: "POST", body: formData });
   } catch (error) {
     throw new PdfParseError(
-      `PDF 처리 도구를 불러오지 못했습니다. 다른 브라우저(크롬·사파리)로 다시 시도해 주세요. (${describeError(error)})`
+      `서버와 통신하지 못했습니다. 네트워크 상태를 확인하고 다시 시도해 주세요. (${describeError(error)})`
     );
   }
 
-  let pdf;
-  try {
-    const buffer = await file.arrayBuffer();
-    pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-  } catch (error) {
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
     throw new PdfParseError(
-      `PDF 파일을 열지 못했습니다. 파일이 손상되지 않았는지 확인해 주세요. (${describeError(error)})`
+      data?.error ?? "PDF를 처리하는 중 알 수 없는 오류가 났습니다."
     );
   }
-
-  let fullText = "";
-  try {
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const content = await page.getTextContent();
-      const pageText = content.items
-        .map((item) => ("str" in item ? item.str : ""))
-        .join(" ");
-      fullText += pageText + "\n\n";
-    }
-  } catch (error) {
-    throw new PdfParseError(
-      `PDF에서 글자를 뽑는 중 오류가 났습니다. (${describeError(error)})`
-    );
+  if (typeof data?.text !== "string" || typeof data?.pageCount !== "number") {
+    throw new PdfParseError("서버 응답 형식이 올바르지 않습니다.");
   }
 
-  const trimmed = fullText.trim();
-  if (trimmed.length < MIN_PDF_TEXT_CHARS) {
-    throw new PdfParseError(
-      "글자를 거의 읽지 못했습니다. 이미지로 저장된 PDF일 수 있으니, " +
-        "한글에서 글자가 포함된 PDF로 다시 변환해 올려 주세요."
-    );
-  }
-
-  return { text: trimmed, pageCount: pdf.numPages };
+  return { text: data.text, pageCount: data.pageCount };
 }

@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "node scripts/sync-env.js && node scripts/sync-pdf-worker.js",
+    "predev": "node scripts/sync-env.js",
     "dev": "next dev",
-    "prebuild": "node scripts/sync-env.js && node scripts/sync-pdf-worker.js",
+    "prebuild": "node scripts/sync-env.js",
     "build": "next build",
-    "prestart": "node scripts/sync-env.js && node scripts/sync-pdf-worker.js",
+    "prestart": "node scripts/sync-env.js",
     "start": "next start",
     "lint": "eslint"
   },
