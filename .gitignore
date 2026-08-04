@@ -44,3 +44,6 @@ next-env.d.ts
 # 삭제 대기함 (즉시 삭제 대신 여기로 옮겨두고, 사용자가 직접 확인 후 삭제)
 /trash-can/*
 !/trash-can/.gitkeep
+
+.vercel
+.env*

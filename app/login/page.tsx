@@ -11,6 +11,30 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
+
+  function goToNext() {
+    const next = searchParams.get("next") ?? "/validator";
+    // 로그인 직후 서버가 내려준 쿠키를 확실히 반영하도록 전체 이동한다
+    window.location.href = next;
+  }
+
+  async function handleDemoEnter() {
+    setDemoLoading(true);
+    try {
+      const res = await fetch("/api/demo-login", { method: "POST" });
+      if (res.ok) {
+        goToNext();
+        return;
+      }
+      const data = await res.json().catch(() => null);
+      setError(data?.error ?? "체험 입장에 실패했습니다.");
+    } catch {
+      setError("네트워크 오류로 체험 입장에 실패했습니다.");
+    } finally {
+      setDemoLoading(false);
+    }
+  }
 
   function validate(): string | null {
     if (!email.trim()) return "이메일을 입력해 주세요.";
@@ -43,9 +67,7 @@ function LoginForm() {
         setSubmitting(false);
         return;
       }
-      const next = searchParams.get("next") ?? "/validator";
-      // 로그인 직후 서버가 내려준 쿠키를 확실히 반영하도록 전체 이동한다
-      window.location.href = next;
+      goToNext();
     } catch {
       setError("네트워크 오류로 로그인하지 못했습니다.");
       setSubmitting(false);
@@ -54,7 +76,25 @@ function LoginForm() {
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
-      <h1 className="mb-6 text-lg font-bold text-zinc-800">로그인</h1>
+      <h1 className="mb-4 text-lg font-bold text-zinc-800">로그인</h1>
+
+      <button
+        type="button"
+        onClick={handleDemoEnter}
+        disabled={demoLoading}
+        className="w-full rounded-xl bg-brand-blue px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#002748] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
+      >
+        {demoLoading ? "입장 중…" : "바로 체험하기"}
+      </button>
+      <p className="mt-2 text-center text-xs text-brand-gray">
+        예시 데이터로 채워진 화면을 로그인 없이 바로 둘러볼 수 있습니다.
+      </p>
+
+      <div className="my-6 flex items-center gap-3 text-xs text-zinc-400">
+        <div className="h-px flex-1 bg-zinc-200" />
+        또는
+        <div className="h-px flex-1 bg-zinc-200" />
+      </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
         <div>

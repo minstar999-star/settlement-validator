@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { OlapParseError, parseOlapFile } from "../lib/excel";
@@ -71,6 +71,22 @@ type CauseState =
 
 function newId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+/** 시연용 더미데이터 — public/sample-data/ 에 있는 파일을 그대로 불러온다 */
+const DEMO_PDF = {
+  url: "/sample-data/query.pdf",
+  name: "국회 예산정책처 2025 회계결산연도 질의사항_샘플.pdf",
+};
+const DEMO_XLSX = {
+  url: "/sample-data/olap.xlsx",
+  name: "OLAP 2025회계연도_세입결산자료_더미.xlsx",
+};
+
+function toFileList(files: File[]): FileList {
+  const dt = new DataTransfer();
+  files.forEach((f) => dt.items.add(f));
+  return dt.files;
 }
 
 /** 파일 상태에 따른 뱃지 */
@@ -273,6 +289,35 @@ export default function ValidatorPage() {
   }
 
   /**
+   * 처음 들어온 사람이 바로 시연해볼 수 있도록, 더미 질의서·OLAP 엑셀을 자동으로
+   * 채워둔다. ✕로 지우거나 "다른 엑셀로 바꾸기"로 실제 파일로 바꿀 수 있다.
+   */
+  const demoLoaded = useRef(false);
+  useEffect(() => {
+    if (demoLoaded.current) return;
+    demoLoaded.current = true;
+
+    (async () => {
+      try {
+        const [pdfBlob, xlsxBlob] = await Promise.all([
+          fetch(DEMO_PDF.url).then((r) => r.blob()),
+          fetch(DEMO_XLSX.url).then((r) => r.blob()),
+        ]);
+        const pdfFile = new File([pdfBlob], DEMO_PDF.name, {
+          type: "application/pdf",
+        });
+        const xlsxFile = new File([xlsxBlob], DEMO_XLSX.name, {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        });
+        await handlePdfFiles(toFileList([pdfFile]));
+        await handleOlapFile(toFileList([xlsxFile]));
+      } catch (error) {
+        console.error("예시 데이터 자동 로드 오류:", error);
+      }
+    })();
+  }, []);
+
+  /**
    * 불일치 항목의 원인을 분석한다. (PLAN.md 20~22번)
    * 원본 파일이 아니라, 질의 문장(개인 식별 표현 제거) + 대조 결과 수치만 서버로 보낸다. (PRD 7번)
    */
@@ -452,6 +497,10 @@ export default function ValidatorPage() {
         </header>
 
         {/* 업로드 영역 */}
+        <p className="mb-3 rounded-lg bg-brand-blue-light px-4 py-2.5 text-xs text-brand-blue">
+          시연을 위해 예시 질의서·OLAP 자료가 자동으로 채워져 있습니다. ✕로 지우거나
+          다른 파일로 바꿔 직접 테스트해볼 수 있습니다.
+        </p>
         <div className="grid grid-cols-2 gap-6">
           {/* 질의서 PDF */}
           <section className="rounded-2xl border border-zinc-200 bg-white p-6">
