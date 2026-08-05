@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { OlapParseError, parseOlapFile } from "../lib/excel";
@@ -9,6 +9,7 @@ import { MAX_PDF_TOTAL_PAGES } from "../lib/limits";
 import { formatWon } from "../lib/amount";
 import { verify } from "../lib/verify";
 import { redactPersonalNames } from "../lib/privacy";
+import { ReportGenerationError, downloadReportPdf } from "../lib/report";
 import type {
   AnalyzeItem,
   CauseResult,
@@ -179,14 +180,110 @@ function CauseCell({ state }: { state: CauseState | undefined }) {
   );
 }
 
+/**
+ * "보고서 생성" 버튼이 캡처해 PDF로 만드는 숨은 요약 문서.
+ * 화면 밖(fixed left: -9999px)에 그려두고 html2canvas로 캡처만 한다.
+ * 사용자가 고른 범위대로 불일치 항목만 담는다.
+ */
+function MismatchReportTemplate({
+  result,
+  causes,
+  innerRef,
+}: {
+  result: VerificationResult;
+  causes: Record<string, CauseState>;
+  innerRef: RefObject<HTMLDivElement | null>;
+}) {
+  const questionById = new Map(result.questions.map((q) => [q.id, q]));
+  const mismatches = result.figures.filter((f) => f.verdict === "불일치");
+
+  return (
+    <div
+      ref={innerRef}
+      className="fixed left-[-9999px] top-0 w-[794px] bg-white p-10 text-zinc-900"
+      style={{
+        fontFamily:
+          '"Malgun Gothic", "Apple SD Gothic Neo", Arial, sans-serif',
+      }}
+    >
+      <div className="flex items-center gap-3 border-b-2 border-brand-blue pb-4">
+        {/* next/image는 화면 밖 요소를 지연 로딩해 캡처 시 비어있을 수 있어 일반 img를 쓴다 */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/재정경제부.svg" alt="재정경제부 로고" width={32} height={32} />
+        <div>
+          <div className="text-lg font-bold text-brand-blue">
+            Validator — 결산질의 검증 보고서
+          </div>
+          <div className="text-xs text-zinc-500">
+            재정경제부 회계결산과 · 내부 검증 도구
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 flex items-center justify-between text-xs text-zinc-500">
+        <span>불일치 항목 {mismatches.length}건</span>
+        <span>생성일시 {new Date().toLocaleString("ko-KR")}</span>
+      </div>
+      {mismatches.length === 0 ? (
+        <p className="mt-6 text-sm text-zinc-600">
+          불일치로 판정된 항목이 없습니다.
+        </p>
+      ) : (
+        <table className="mt-4 w-full border-collapse text-xs">
+          <thead>
+            <tr className="border-b border-zinc-300 bg-zinc-50 text-left">
+              <th className="p-2">질의 항목</th>
+              <th className="p-2">인용값</th>
+              <th className="p-2">원자료값</th>
+              <th className="p-2">근거 위치</th>
+              <th className="p-2">원인</th>
+            </tr>
+          </thead>
+          <tbody>
+            {mismatches.map((figure) => {
+              const question = questionById.get(figure.questionId);
+              return (
+                <tr
+                  key={figure.id}
+                  className="border-b border-zinc-200 align-top"
+                >
+                  <td className="p-2">
+                    {question ? `${question.title} (${question.docName})` : ""}
+                  </td>
+                  <td className="p-2">
+                    {figure.conversion ?? formatWon(figure.won)}
+                  </td>
+                  <td className="p-2">
+                    {figure.actual !== null ? formatWon(figure.actual) : ""}
+                  </td>
+                  <td className="p-2">{targetLabelText(figure)}</td>
+                  <td className="p-2">{causeText(figure, causes[figure.id])}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+      <p className="mt-6 text-[10px] text-zinc-400">
+        이 보고서는 실습을 위한 가상 더미데이터를 포함할 수 있으며, 내부
+        검증용으로만 사용합니다.
+      </p>
+    </div>
+  );
+}
+
 export default function ValidatorPage() {
   const [olap, setOlap] = useState<LoadedFile<OlapData> | null>(null);
   const [docs, setDocs] = useState<LoadedFile<QuestionDoc>[]>([]);
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [causes, setCauses] = useState<Record<string, CauseState>>({});
   const [copyStatus, setCopyStatus] = useState<"idle" | "done" | "error">("idle");
+  const [reportStatus, setReportStatus] = useState<
+    "idle" | "생성 중" | "done" | "error"
+  >("idle");
+  const [reportErrorMessage, setReportErrorMessage] = useState("");
   const olapInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
+  const reportRef = useRef<HTMLDivElement>(null);
 
   const readyDocs = docs.filter((d) => d.status === "준비 완료");
   const totalPages = readyDocs.reduce(
@@ -456,6 +553,28 @@ export default function ValidatorPage() {
     a.download = `결산질의_검증결과_${today}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  /** 불일치 항목만 요약한 PDF 보고서를 만들어 내려받는다 */
+  async function handleGenerateReport() {
+    if (!reportRef.current) return;
+    setReportStatus("생성 중");
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      await downloadReportPdf(
+        reportRef.current,
+        `결산질의_검증보고서_${today}.pdf`
+      );
+      setReportStatus("done");
+    } catch (error) {
+      const message =
+        error instanceof ReportGenerationError
+          ? error.message
+          : "보고서를 만드는 중 알 수 없는 오류가 났습니다.";
+      console.error("보고서 생성 오류:", error);
+      setReportErrorMessage(message);
+      setReportStatus("error");
+    }
   }
 
   return (
@@ -787,6 +906,14 @@ export default function ValidatorPage() {
                   >
                     CSV 다운로드
                   </button>
+                  <button
+                    type="button"
+                    onClick={handleGenerateReport}
+                    disabled={reportStatus === "생성 중"}
+                    className="rounded-lg border border-brand-blue/30 px-4 py-2 text-xs font-medium text-brand-blue transition-colors hover:bg-brand-blue-light disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {reportStatus === "생성 중" ? "보고서 생성 중…" : "보고서 생성"}
+                  </button>
                   {copyStatus === "done" && (
                     <span className="text-xs text-brand-gray">
                       결과를 클립보드에 복사했습니다.
@@ -795,6 +922,16 @@ export default function ValidatorPage() {
                   {copyStatus === "error" && (
                     <span className="text-xs text-brand-red">
                       복사에 실패했습니다. 다시 시도해주세요.
+                    </span>
+                  )}
+                  {reportStatus === "done" && (
+                    <span className="text-xs text-brand-gray">
+                      불일치 항목 보고서를 내려받았습니다.
+                    </span>
+                  )}
+                  {reportStatus === "error" && (
+                    <span className="text-xs text-brand-red">
+                      {reportErrorMessage}
                     </span>
                   )}
                 </div>
@@ -833,6 +970,14 @@ export default function ValidatorPage() {
             </>
           )}
         </section>
+
+        {result && (
+          <MismatchReportTemplate
+            result={result}
+            causes={causes}
+            innerRef={reportRef}
+          />
+        )}
 
         {/* 정부 사이트 관례를 따른 하단 정보 표시 */}
         <footer className="mt-10 border-t border-zinc-200 pt-6 text-center text-xs text-brand-gray">
